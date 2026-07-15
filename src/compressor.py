@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+import fitz
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class CompressionResult:
     input_bytes: int
     output_bytes: int
     level: int
+    page_count: int
 
 
 PROFILES = {
@@ -53,91 +55,49 @@ def make_output_path(input_path: Path, level: int) -> Path:
     source = Path(input_path)
     base_name = f"{source.stem}_压缩_L{level}"
     output = source.with_name(f"{base_name}{source.suffix}")
-    suffix = 2
+    number = 2
     while output.exists():
-        output = source.with_name(f"{base_name} ({suffix}){source.suffix}")
-        suffix += 1
+        output = source.with_name(f"{base_name} ({number}){source.suffix}")
+        number += 1
     return output
 
 
-def build_compress_command(
-    gs_executable: Path,
-    input_path: Path,
-    output_path: Path,
-    profile: CompressionProfile,
-) -> list[str]:
-    resolution = profile.resolution_dpi
-    return [
-        str(gs_executable),
-        "-dSAFER",
-        "-dBATCH",
-        "-dNOPAUSE",
-        "-sDEVICE=pdfwrite",
-        "-dCompatibilityLevel=1.4",
-        "-dAutoRotatePages=/None",
-        "-dDownsampleColorImages=true",
-        "-dColorImageDownsampleType=/Bicubic",
-        f"-dColorImageResolution={resolution}",
-        "-dDownsampleGrayImages=true",
-        "-dGrayImageDownsampleType=/Bicubic",
-        f"-dGrayImageResolution={resolution}",
-        "-dEncodeColorImages=true",
-        "-dAutoFilterColorImages=false",
-        "-dColorImageFilter=/DCTEncode",
-        "-dEncodeGrayImages=true",
-        "-dAutoFilterGrayImages=false",
-        "-dGrayImageFilter=/DCTEncode",
-        "-dEncodeMonoImages=true",
-        "-dAutoFilterMonoImages=false",
-        "-dMonoImageFilter=/CCITTFaxEncode",
-        f"-dJPEGQ={profile.jpeg_quality}",
-        f"-sOutputFile={output_path}",
-        str(input_path),
-    ]
-
-
-def compress_pdf(
-    input_path: Path,
-    level: int,
-    gs_executable: Path | None = None,
-) -> CompressionResult:
+def compress_pdf(input_path: Path, level: int) -> CompressionResult:
     source = validate_source(input_path)
     profile = get_profile(level)
-    if gs_executable is None:
-        from runtime import RuntimeNotFoundError, ghostscript_executable
-
-        try:
-            engine = ghostscript_executable()
-        except RuntimeNotFoundError as error:
-            raise CompressionError(str(error)) from error
-    else:
-        engine = Path(gs_executable)
-    if not engine.is_file():
-        raise CompressionError("压缩引擎不可用，请重新解压完整发布目录。")
     output = make_output_path(source, level)
+
     try:
-        try:
-            completed = subprocess.run(
-                build_compress_command(engine, source, output, profile),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
-        except OSError as error:
-            raise CompressionError("压缩引擎无法启动，请重新解压完整发布目录。") from error
-        if completed.returncode != 0:
-            raise CompressionError("压缩引擎执行失败，请检查 PDF 是否损坏或受密码保护。")
-        if not output.is_file() or output.stat().st_size == 0:
-            raise CompressionError("压缩后文件未生成或为空。")
+        source_document = fitz.open(source)
+    except (fitz.FileDataError, fitz.EmptyFileError) as error:
+        raise CompressionError("无法读取 PDF，该文件可能损坏或受密码保护。") from error
+    if source_document.needs_pass:
+        source_document.close()
+        raise CompressionError("该 PDF 受密码保护，暂不支持压缩。")
+
+    try:
+        with source_document:
+            with fitz.open() as result_document:
+                for source_page in source_document:
+                    image = source_page.get_pixmap(dpi=profile.resolution_dpi, alpha=False)
+                    jpeg = image.tobytes("jpeg", jpg_quality=profile.jpeg_quality)
+                    result_page = result_document.new_page(
+                        width=source_page.rect.width,
+                        height=source_page.rect.height,
+                    )
+                    result_page.insert_image(result_page.rect, stream=jpeg)
+                result_document.save(output, garbage=4, deflate=True)
+
+        with fitz.open(output) as validated_document:
+            page_count = validated_document.page_count
         return CompressionResult(
             input_path=source,
             output_path=output,
             input_bytes=source.stat().st_size,
             output_bytes=output.stat().st_size,
             level=level,
+            page_count=page_count,
         )
-    except Exception:
+    except Exception as error:
         output.unlink(missing_ok=True)
-        raise
+        raise CompressionError("无法生成新的 PDF 文件，请检查磁盘空间和文件权限。") from error
