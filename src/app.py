@@ -54,8 +54,8 @@ class PdfCompressorApp:
         self.result_text = tk.StringVar(value="")
 
         self.root.title("PDF 轻压")
-        self.root.geometry("760x600")
-        self.root.minsize(680, 560)
+        self.root.geometry("760x660")
+        self.root.minsize(680, 620)
         self.root.configure(background=BACKGROUND)
         self._configure_style()
         self._build()
