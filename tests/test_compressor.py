@@ -10,6 +10,7 @@ import fitz
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from app import LEVEL_OPTIONS, format_bytes, format_ratio
 from compressor import CompressionError, compress_pdf, get_profile
 
 
@@ -104,6 +105,23 @@ class PdfCompressionTests(unittest.TestCase):
 
             with self.assertRaisesRegex(CompressionError, "受密码保护"):
                 compress_pdf(source, 2)
+
+
+class PresentationTests(unittest.TestCase):
+    def test_file_sizes_and_ratio_are_readable(self) -> None:
+        self.assertEqual(format_bytes(1024), "1.00 KB")
+        self.assertEqual(format_ratio(1_000, 750), "缩小 25.0%")
+        self.assertEqual(format_ratio(1_000, 1_200), "增大 20.0%")
+
+    def test_level_options_explain_all_three_levels(self) -> None:
+        self.assertEqual(
+            LEVEL_OPTIONS,
+            (
+                (1, "1 级 · 清晰优先", "200 DPI · JPEG 质量 85"),
+                (2, "2 级 · 均衡推荐", "150 DPI · JPEG 质量 75"),
+                (3, "3 级 · 体积优先", "110 DPI · JPEG 质量 65"),
+            ),
+        )
 
 
 if __name__ == "__main__":
