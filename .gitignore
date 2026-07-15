@@ -1,9 +1,11 @@
 .venv/
+.venv-build/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 build/
 dist/
+pyinstaller/
 runtime/
 artifacts/
 wheelhouse/
