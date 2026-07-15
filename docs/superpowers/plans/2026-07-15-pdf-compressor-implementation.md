@@ -6,7 +6,7 @@
 
 **Architecture:** Tkinter 只负责窗口和线程调度；`compressor.py` 负责所有无 UI 的 PDF 校验、Ghostscript 命令、输出路径和结果验证。Ghostscript 作为发布目录中的私有运行时，通过子进程执行 `pdfwrite`，避免用户预装依赖。
 
-**Tech Stack:** Python 3.10、标准库 Tkinter/unittest、Ghostscript 10.08.0、PyInstaller 6.x、PowerShell 5.1+。
+**Tech Stack:** Python 3.10、标准库 Tkinter/unittest、Ghostscript 10.07.1、PyInstaller 6.x、PowerShell 5.1+。
 
 ## Global Constraints
 
@@ -239,7 +239,7 @@ git commit -m 'feat: add Windows desktop interface'
 pyinstaller==6.16.0
 ```
 
-`README.md` 明确说明使用步骤、输出命名、三档效果、已优化 PDF 可能变大、只支持不受密码保护的 PDF；`THIRD_PARTY_NOTICES.md` 写入 Ghostscript 官方下载页、版本 `10.08.0`、AGPL/GPL 或商业许可提醒和完整运行时随包分发要求。
+`README.md` 明确说明使用步骤、输出命名、三档效果、已优化 PDF 可能变大、只支持不受密码保护的 PDF；`THIRD_PARTY_NOTICES.md` 写入 Ghostscript 官方下载页、版本 `10.07.1`、AGPL/GPL 或商业许可提醒和完整运行时随包分发要求。
 
 - [ ] **Step 2: 实现可重复打包脚本**
 
