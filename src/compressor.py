@@ -25,35 +25,35 @@ class CompressionResult:
 
 
 PROFILES = {
-    1: CompressionProfile(1, "清晰优先", 200, 85),
-    2: CompressionProfile(2, "均衡推荐", 150, 75),
-    3: CompressionProfile(3, "体积优先", 110, 65),
+    1: CompressionProfile(1, "Prioritas Jernih", 200, 85),
+    2: CompressionProfile(2, "Seimbang (Rekomendasi)", 150, 75),
+    3: CompressionProfile(3, "Prioritas Ukuran Kecil", 110, 65),
 }
 
 
 class CompressionError(Exception):
-    """用户可直接理解的压缩失败原因。"""
+    """Penyebab kegagalan kompresi yang dapat langsung dipahami pengguna."""
 
 
 def get_profile(level: int) -> CompressionProfile:
     try:
         return PROFILES[level]
     except KeyError as error:
-        raise ValueError("压缩等级只能是 1、2 或 3。") from error
+        raise ValueError("Tingkat kompresi hanya boleh 1, 2, atau 3.") from error
 
 
 def validate_source(input_path: Path) -> Path:
     source = Path(input_path)
     if source.suffix.lower() != ".pdf":
-        raise CompressionError("请选择 PDF 文件。")
+        raise CompressionError("Silakan pilih file PDF.")
     if not source.is_file():
-        raise CompressionError("找不到所选 PDF 文件。")
+        raise CompressionError("File PDF yang dipilih tidak ditemukan.")
     return source
 
 
 def make_output_path(input_path: Path, level: int) -> Path:
     source = Path(input_path)
-    base_name = f"{source.stem}_压缩_L{level}"
+    base_name = f"{source.stem}_kompres_L{level}"
     output = source.with_name(f"{base_name}{source.suffix}")
     number = 2
     while output.exists():
@@ -70,10 +70,10 @@ def compress_pdf(input_path: Path, level: int) -> CompressionResult:
     try:
         source_document = fitz.open(source)
     except (fitz.FileDataError, fitz.EmptyFileError) as error:
-        raise CompressionError("无法读取 PDF，该文件可能损坏或受密码保护。") from error
+        raise CompressionError("Tidak dapat membaca PDF, file mungkin rusak atau dilindungi kata sandi.") from error
     if source_document.needs_pass:
         source_document.close()
-        raise CompressionError("该 PDF 受密码保护，暂不支持压缩。")
+        raise CompressionError("PDF ini dilindungi kata sandi, kompresi belum didukung.")
 
     try:
         with source_document:
@@ -100,4 +100,4 @@ def compress_pdf(input_path: Path, level: int) -> CompressionResult:
         )
     except Exception as error:
         output.unlink(missing_ok=True)
-        raise CompressionError("无法生成新的 PDF 文件，请检查磁盘空间和文件权限。") from error
+        raise CompressionError("Gagal membuat file PDF baru, periksa ruang penyimpanan dan izin akses file.") from error
