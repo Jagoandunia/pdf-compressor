@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import fitz
 
@@ -25,9 +26,9 @@ class CompressionResult:
 
 
 PROFILES = {
-    1: CompressionProfile(1, "Prioritas Jernih", 200, 85),
-    2: CompressionProfile(2, "Seimbang (Rekomendasi)", 150, 75),
-    3: CompressionProfile(3, "Prioritas Ukuran Kecil", 110, 65),
+    1: CompressionProfile(1, "Kualitas", 200, 85),
+    2: CompressionProfile(2, "Seimbang", 150, 75),
+    3: CompressionProfile(3, "Kecil", 110, 65),
 }
 
 
@@ -62,7 +63,11 @@ def make_output_path(input_path: Path, level: int) -> Path:
     return output
 
 
-def compress_pdf(input_path: Path, level: int) -> CompressionResult:
+def compress_pdf(
+    input_path: Path,
+    level: int,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> CompressionResult:
     source = validate_source(input_path)
     profile = get_profile(level)
     output = make_output_path(source, level)
@@ -77,8 +82,11 @@ def compress_pdf(input_path: Path, level: int) -> CompressionResult:
 
     try:
         with source_document:
+            total_pages = max(source_document.page_count, 1)
+            if progress_callback is not None:
+                progress_callback(0, total_pages)
             with fitz.open() as result_document:
-                for source_page in source_document:
+                for index, source_page in enumerate(source_document, start=1):
                     image = source_page.get_pixmap(dpi=profile.resolution_dpi, alpha=False)
                     jpeg = image.tobytes("jpeg", jpg_quality=profile.jpeg_quality)
                     result_page = result_document.new_page(
@@ -86,6 +94,8 @@ def compress_pdf(input_path: Path, level: int) -> CompressionResult:
                         height=source_page.rect.height,
                     )
                     result_page.insert_image(result_page.rect, stream=jpeg)
+                    if progress_callback is not None:
+                        progress_callback(index, total_pages)
                 result_document.save(output, garbage=4, deflate=True)
 
         with fitz.open(output) as validated_document:
@@ -98,6 +108,9 @@ def compress_pdf(input_path: Path, level: int) -> CompressionResult:
             level=level,
             page_count=page_count,
         )
+    except CompressionError:
+        output.unlink(missing_ok=True)
+        raise
     except Exception as error:
         output.unlink(missing_ok=True)
         raise CompressionError("Gagal membuat file PDF baru, periksa ruang penyimpanan dan izin akses file.") from error
