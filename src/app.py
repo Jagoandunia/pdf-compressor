@@ -9,9 +9,9 @@ from tkinter import filedialog, ttk
 from compressor import CompressionError, CompressionResult, compress_pdf
 
 LEVEL_OPTIONS = (
-    (1, "1 级 · 清晰优先", "200 DPI · JPEG 质量 85"),
-    (2, "2 级 · 均衡推荐", "150 DPI · JPEG 质量 75"),
-    (3, "3 级 · 体积优先", "110 DPI · JPEG 质量 65"),
+    (1, "Level 1 · Prioritas Jernih", "200 DPI · Kualitas JPEG 85"),
+    (2, "Level 2 · Seimbang (Rekomendasi)", "150 DPI · Kualitas JPEG 75"),
+    (3, "Level 3 · Prioritas Ukuran Kecil", "110 DPI · Kualitas JPEG 65"),
 )
 
 BACKGROUND = "#F4F7FB"
@@ -36,9 +36,9 @@ def format_bytes(size: int) -> str:
 
 def format_ratio(input_bytes: int, output_bytes: int) -> str:
     if input_bytes <= 0:
-        return "无法计算比例"
+        return "Rasio tidak dapat dihitung"
     percent = abs(output_bytes - input_bytes) / input_bytes * 100
-    action = "缩小" if output_bytes <= input_bytes else "增大"
+    action = "Berkurang" if output_bytes <= input_bytes else "Bertambah"
     return f"{action} {percent:.1f}%"
 
 
@@ -48,12 +48,12 @@ class PdfCompressorApp:
         self.selected_path: Path | None = None
         self.output_path: Path | None = None
         self.level = tk.IntVar(value=2)
-        self.file_text = tk.StringVar(value="尚未选择文件")
-        self.file_detail = tk.StringVar(value="支持本地 PDF 文件")
-        self.status_text = tk.StringVar(value="选择文件和压缩等级后开始处理。")
+        self.file_text = tk.StringVar(value="Belum ada file yang dipilih")
+        self.file_detail = tk.StringVar(value="Mendukung file PDF lokal")
+        self.status_text = tk.StringVar(value="Pilih file dan tingkat kompresi untuk memulai.")
         self.result_text = tk.StringVar(value="")
 
-        self.root.title("PDF 轻压")
+        self.root.title("Kompresor PDF Ringan")
         self.root.geometry("760x660")
         self.root.minsize(680, 620)
         self.root.configure(background=BACKGROUND)
@@ -89,14 +89,14 @@ class PdfCompressorApp:
 
         tk.Label(
             main,
-            text="PDF 轻压",
+            text="Kompresor PDF Ringan",
             background=BACKGROUND,
             foreground=INK,
             font=("Segoe UI Semibold", 26),
         ).pack(anchor="w")
         tk.Label(
             main,
-            text="本地压缩 · 原文件不改写 · 自动生成新文件",
+            text="Kompresi lokal · File asli tidak diubah · Otomatis membuat file baru",
             background=BACKGROUND,
             foreground=MUTED,
             font=("Segoe UI", 11),
@@ -106,7 +106,7 @@ class PdfCompressorApp:
         file_card.pack(fill="x")
         tk.Label(
             file_card,
-            text="① 选择 PDF 文件",
+            text="① Pilih File PDF",
             background=CARD,
             foreground=INK,
             font=("Segoe UI Semibold", 12),
@@ -115,7 +115,7 @@ class PdfCompressorApp:
         file_row.pack(fill="x", pady=(12, 0))
         self.file_button = tk.Button(
             file_row,
-            text="选择 PDF",
+            text="Pilih PDF",
             command=self.choose_file,
             cursor="hand2",
             background="#E8F1FF",
@@ -151,7 +151,7 @@ class PdfCompressorApp:
         level_card.pack(fill="x", pady=(14, 0))
         tk.Label(
             level_card,
-            text="② 选择压缩等级",
+            text="② Pilih Tingkat Kompresi",
             background=CARD,
             foreground=INK,
             font=("Segoe UI Semibold", 12),
@@ -197,7 +197,7 @@ class PdfCompressorApp:
         notice.pack(fill="x", pady=(14, 0))
         tk.Label(
             notice,
-            text="说明：输出会转换为图片 PDF，文字将无法再搜索、复制或编辑。",
+            text="Catatan: Hasil kompresi akan dikonversi menjadi PDF berbasis gambar, sehingga teks tidak lagi dapat dicari, disalin, atau diedit.",
             background=NOTICE,
             foreground=NOTICE_INK,
             font=("Segoe UI", 10),
@@ -209,7 +209,7 @@ class PdfCompressorApp:
         action_row.pack(fill="x", pady=(18, 0))
         self.start_button = tk.Button(
             action_row,
-            text="开始压缩",
+            text="Mulai Kompresi",
             command=self.start_compression,
             cursor="hand2",
             background=ACCENT,
@@ -224,7 +224,7 @@ class PdfCompressorApp:
         self.start_button.pack(side="left")
         self.open_button = tk.Button(
             action_row,
-            text="打开所在文件夹",
+            text="Buka Folder Lokasi",
             command=self.open_output_folder,
             cursor="hand2",
             background=BACKGROUND,
@@ -268,26 +268,26 @@ class PdfCompressorApp:
 
     def choose_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="选择要压缩的 PDF",
-            filetypes=[("PDF 文件", "*.pdf")],
+            title="Pilih PDF yang akan dikompres",
+            filetypes=[("File PDF", "*.pdf")],
         )
         if not selected:
             return
         self.selected_path = Path(selected)
         self.file_text.set(self.selected_path.name)
-        self.file_detail.set(f"原文件大小：{format_bytes(self.selected_path.stat().st_size)}")
+        self.file_detail.set(f"Ukuran file asli: {format_bytes(self.selected_path.stat().st_size)}")
         self._clear_result()
-        self.status_text.set("文件已准备好，请选择压缩等级。")
+        self.status_text.set("File siap, silakan pilih tingkat kompresi.")
         self.status_label.configure(foreground=MUTED)
 
     def start_compression(self) -> None:
         if self.selected_path is None:
-            self._show_error("请先选择一个 PDF 文件。")
+            self._show_error("Silakan pilih file PDF terlebih dahulu.")
             return
         source = self.selected_path
         level = self.level.get()
         self._set_busy(True)
-        self.status_text.set("正在压缩，请稍候…")
+        self.status_text.set("Sedang mengompres, harap tunggu…")
         self.status_label.configure(foreground=ACCENT_DARK)
         Thread(
             target=self._compress_worker,
@@ -301,7 +301,7 @@ class PdfCompressorApp:
         except (CompressionError, ValueError) as error:
             self.root.after(0, lambda: self._show_error(str(error)))
         except Exception:
-            self.root.after(0, lambda: self._show_error("压缩异常，请检查文件后重试。"))
+            self.root.after(0, lambda: self._show_error("Terjadi kesalahan saat kompresi, periksa file lalu coba lagi."))
         else:
             self.root.after(0, lambda: self._show_success(result))
         finally:
@@ -327,13 +327,13 @@ class PdfCompressorApp:
 
     def _show_success(self, result: CompressionResult) -> None:
         self.output_path = result.output_path
-        self.status_text.set("压缩完成，已生成新文件。")
+        self.status_text.set("Kompresi selesai, file baru telah dibuat.")
         self.status_label.configure(foreground=SUCCESS)
         self.result_text.set(
-            f"原文件：{format_bytes(result.input_bytes)}    "
-            f"新文件：{format_bytes(result.output_bytes)}    "
+            f"File asli: {format_bytes(result.input_bytes)}    "
+            f"File baru: {format_bytes(result.output_bytes)}    "
             f"{format_ratio(result.input_bytes, result.output_bytes)}\n"
-            f"输出位置：{result.output_path}"
+            f"Lokasi output: {result.output_path}"
         )
         self.open_button.configure(state="normal")
 
@@ -359,4 +359,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
