@@ -59,6 +59,7 @@ class PdfCompressorApp:
         self.output_path: Path | None = None
         self.is_busy = False
         self.level = tk.IntVar(value=2)
+        self.auto_compress_drop = tk.BooleanVar(value=True)
         self.file_text = tk.StringVar(value="Belum ada file yang dipilih")
         default_detail = (
             "Tarik & lepas (drag & drop) file PDF ke area ini, atau klik Pilih PDF"
@@ -70,8 +71,8 @@ class PdfCompressorApp:
         self.result_text = tk.StringVar(value="")
 
         self.root.title("Kompresor PDF Ringan")
-        self.root.geometry("760x660")
-        self.root.minsize(680, 620)
+        self.root.geometry("760x680")
+        self.root.minsize(480, 580)
         self.root.configure(background=BACKGROUND)
         self._configure_style()
         self._build()
@@ -100,24 +101,42 @@ class PdfCompressorApp:
             pady=18,
         )
 
+    @staticmethod
+    def _bind_responsive_wrap(container: tk.Widget, label: tk.Label, horizontal_margin: int = 0) -> None:
+        def _update_wrap(event: tk.Event) -> None:
+            available = max(event.width - horizontal_margin, 120)
+            if int(label.cget("wraplength") or 0) != available:
+                label.configure(wraplength=available)
+
+        container.bind("<Configure>", _update_wrap, add="+")
+
     def _build(self) -> None:
         main = tk.Frame(self.root, background=BACKGROUND)
-        main.pack(fill="both", expand=True, padx=32, pady=26)
+        main.pack(fill="both", expand=True, padx=28, pady=24)
 
-        tk.Label(
+        title_label = tk.Label(
             main,
             text="Kompresor PDF Ringan",
             background=BACKGROUND,
             foreground=INK,
-            font=("Segoe UI Semibold", 26),
-        ).pack(anchor="w")
-        tk.Label(
+            anchor="w",
+            justify="left",
+            font=("Segoe UI Semibold", 24),
+        )
+        title_label.pack(fill="x")
+        self._bind_responsive_wrap(main, title_label)
+
+        subtitle_label = tk.Label(
             main,
             text="Kompresi lokal · File asli tidak diubah · Otomatis membuat file baru",
             background=BACKGROUND,
             foreground=MUTED,
-            font=("Segoe UI", 11),
-        ).pack(anchor="w", pady=(2, 18))
+            anchor="w",
+            justify="left",
+            font=("Segoe UI", 10),
+        )
+        subtitle_label.pack(fill="x", pady=(2, 16))
+        self._bind_responsive_wrap(main, subtitle_label)
 
         self.file_card = self._card(main)
         self.file_card.pack(fill="x")
@@ -126,9 +145,13 @@ class PdfCompressorApp:
             text="① Pilih atau Seret (Drag & Drop) File PDF",
             background=CARD,
             foreground=INK,
+            anchor="w",
+            justify="left",
             font=("Segoe UI Semibold", 12),
         )
-        self.file_step_label.pack(anchor="w")
+        self.file_step_label.pack(fill="x")
+        self._bind_responsive_wrap(self.file_card, self.file_step_label, horizontal_margin=44)
+
         self.file_row = tk.Frame(self.file_card, background=CARD)
         self.file_row.pack(fill="x", pady=(12, 0))
         self.file_button = tk.Button(
@@ -145,7 +168,8 @@ class PdfCompressorApp:
             pady=8,
             font=("Segoe UI Semibold", 10),
         )
-        self.file_button.pack(side="left")
+        self.file_button.pack(side="left", anchor="n")
+
         self.labels_frame = tk.Frame(self.file_row, background=CARD)
         self.labels_frame.pack(side="left", fill="x", expand=True, padx=(14, 0))
         self.file_name_label = tk.Label(
@@ -154,28 +178,54 @@ class PdfCompressorApp:
             background=CARD,
             foreground=INK,
             anchor="w",
+            justify="left",
             font=("Segoe UI Semibold", 10),
         )
         self.file_name_label.pack(fill="x")
+        self._bind_responsive_wrap(self.labels_frame, self.file_name_label)
+
         self.file_detail_label = tk.Label(
             self.labels_frame,
             textvariable=self.file_detail,
             background=CARD,
             foreground=MUTED,
             anchor="w",
+            justify="left",
             font=("Segoe UI", 9),
         )
         self.file_detail_label.pack(fill="x", pady=(2, 0))
+        self._bind_responsive_wrap(self.labels_frame, self.file_detail_label)
+
+        self.auto_drop_check = tk.Checkbutton(
+            self.file_card,
+            text="Otomatis langsung kompres saat file di-drag & drop",
+            variable=self.auto_compress_drop,
+            cursor="hand2",
+            background=CARD,
+            activebackground=CARD,
+            foreground=INK,
+            selectcolor="#DCEBFF",
+            anchor="w",
+            justify="left",
+            font=("Segoe UI", 9),
+        )
+        self.auto_drop_check.pack(fill="x", pady=(12, 0))
+        self._bind_responsive_wrap(self.file_card, self.auto_drop_check, horizontal_margin=64)
 
         level_card = self._card(main)
         level_card.pack(fill="x", pady=(14, 0))
-        tk.Label(
+        level_step_label = tk.Label(
             level_card,
             text="② Pilih Tingkat Kompresi",
             background=CARD,
             foreground=INK,
+            anchor="w",
+            justify="left",
             font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
+        )
+        level_step_label.pack(fill="x")
+        self._bind_responsive_wrap(level_card, level_step_label, horizontal_margin=44)
+
         self.level_controls: list[tk.Radiobutton] = []
         level_row = tk.Frame(level_card, background=CARD)
         level_row.pack(fill="x", pady=(12, 0))
@@ -189,7 +239,7 @@ class PdfCompressorApp:
                 pady=9,
             )
             item.grid(row=0, column=index, sticky="nsew", padx=(0, 8) if index < 2 else 0)
-            level_row.grid_columnconfigure(index, weight=1)
+            level_row.grid_columnconfigure(index, weight=1, uniform="level_col")
             control = tk.Radiobutton(
                 item,
                 text=title,
@@ -202,28 +252,37 @@ class PdfCompressorApp:
                 selectcolor="#DCEBFF",
                 font=("Segoe UI Semibold", 10),
                 anchor="w",
+                justify="left",
             )
-            control.pack(anchor="w")
-            tk.Label(
+            control.pack(fill="x")
+            self._bind_responsive_wrap(item, control, horizontal_margin=42)
+
+            detail_lbl = tk.Label(
                 item,
                 text=detail,
                 background="#F8FAFD",
                 foreground=MUTED,
+                anchor="w",
+                justify="left",
                 font=("Segoe UI", 8),
-            ).pack(anchor="w", padx=(25, 0), pady=(3, 0))
+            )
+            detail_lbl.pack(fill="x", padx=(24, 0), pady=(3, 0))
+            self._bind_responsive_wrap(item, detail_lbl, horizontal_margin=44)
             self.level_controls.append(control)
 
         notice = self._card(main, background=NOTICE)
         notice.pack(fill="x", pady=(14, 0))
-        tk.Label(
+        notice_label = tk.Label(
             notice,
             text="Catatan: Hasil kompresi akan dikonversi menjadi PDF berbasis gambar, sehingga teks tidak lagi dapat dicari, disalin, atau diedit.",
             background=NOTICE,
             foreground=NOTICE_INK,
             font=("Segoe UI", 10),
+            anchor="w",
             justify="left",
-            wraplength=650,
-        ).pack(anchor="w")
+        )
+        notice_label.pack(fill="x")
+        self._bind_responsive_wrap(notice, notice_label, horizontal_margin=44)
 
         action_row = tk.Frame(main, background=BACKGROUND)
         action_row.pack(fill="x", pady=(18, 0))
@@ -271,9 +330,12 @@ class PdfCompressorApp:
             background=BACKGROUND,
             foreground=MUTED,
             anchor="w",
+            justify="left",
             font=("Segoe UI", 10),
         )
         self.status_label.pack(fill="x", pady=(14, 0))
+        self._bind_responsive_wrap(main, self.status_label)
+
         self.result_label = tk.Label(
             main,
             textvariable=self.result_text,
@@ -281,15 +343,14 @@ class PdfCompressorApp:
             foreground=INK,
             anchor="w",
             justify="left",
-            wraplength=675,
             font=("Segoe UI", 10),
         )
         self.result_label.pack(fill="x", pady=(5, 0))
+        self._bind_responsive_wrap(main, self.result_label)
 
     def _setup_dnd(self) -> None:
         if not HAS_DND or not hasattr(self.root, "drop_target_register"):
             return
-        # Daftarkan seluruh jendela agar bisa menerima drag & drop dari mana saja di dalam aplikasi
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind("<<DropEnter>>", self._on_drag_enter)
         self.root.dnd_bind("<<DropLeave>>", self._on_drag_leave)
@@ -305,8 +366,9 @@ class PdfCompressorApp:
             self.labels_frame,
             self.file_name_label,
             self.file_detail_label,
+            self.auto_drop_check,
         ):
-            widget.configure(background=bg)
+            widget.configure(background=bg, activebackground=bg)
 
     def _on_drag_enter(self, _event: tk.Event) -> None:
         if not self.is_busy:
@@ -339,6 +401,8 @@ class PdfCompressorApp:
             return
 
         self._load_selected_file(dropped_path)
+        if self.auto_compress_drop.get():
+            self.start_compression()
 
     def _load_selected_file(self, path: Path) -> None:
         self.selected_path = path
@@ -389,6 +453,7 @@ class PdfCompressorApp:
         state = "disabled" if busy else "normal"
         self.file_button.configure(state=state)
         self.start_button.configure(state=state)
+        self.auto_drop_check.configure(state=state)
         for control in self.level_controls:
             control.configure(state=state)
         if busy:
