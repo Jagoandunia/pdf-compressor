@@ -366,9 +366,9 @@ class PdfCompressorApp:
             self.labels_frame,
             self.file_name_label,
             self.file_detail_label,
-            self.auto_drop_check,
         ):
-            widget.configure(background=bg, activebackground=bg)
+            widget.configure(background=bg)
+        self.auto_drop_check.configure(background=bg, activebackground=bg)
 
     def _on_drag_enter(self, _event: tk.Event) -> None:
         if not self.is_busy:
