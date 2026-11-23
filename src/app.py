@@ -6,6 +6,15 @@ from pathlib import Path
 from threading import Thread
 from tkinter import filedialog, ttk
 
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+
+    HAS_DND = True
+except ImportError:
+    DND_FILES = None
+    TkinterDnD = None
+    HAS_DND = False
+
 from compressor import CompressionError, CompressionResult, compress_pdf
 
 LEVEL_OPTIONS = (
@@ -16,6 +25,7 @@ LEVEL_OPTIONS = (
 
 BACKGROUND = "#F4F7FB"
 CARD = "#FFFFFF"
+DROP_HOVER = "#EEF5FF"
 INK = "#102A43"
 MUTED = "#627D98"
 ACCENT = "#1769E0"
@@ -47,10 +57,16 @@ class PdfCompressorApp:
         self.root = root
         self.selected_path: Path | None = None
         self.output_path: Path | None = None
+        self.is_busy = False
         self.level = tk.IntVar(value=2)
         self.file_text = tk.StringVar(value="Belum ada file yang dipilih")
-        self.file_detail = tk.StringVar(value="Mendukung file PDF lokal")
-        self.status_text = tk.StringVar(value="Pilih file dan tingkat kompresi untuk memulai.")
+        default_detail = (
+            "Tarik & lepas (drag & drop) file PDF ke area ini, atau klik Pilih PDF"
+            if HAS_DND
+            else "Mendukung file PDF lokal"
+        )
+        self.file_detail = tk.StringVar(value=default_detail)
+        self.status_text = tk.StringVar(value="Pilih atau seret file PDF dan tentukan tingkat kompresi.")
         self.result_text = tk.StringVar(value="")
 
         self.root.title("Kompresor PDF Ringan")
@@ -59,6 +75,7 @@ class PdfCompressorApp:
         self.root.configure(background=BACKGROUND)
         self._configure_style()
         self._build()
+        self._setup_dnd()
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -102,19 +119,20 @@ class PdfCompressorApp:
             font=("Segoe UI", 11),
         ).pack(anchor="w", pady=(2, 18))
 
-        file_card = self._card(main)
-        file_card.pack(fill="x")
-        tk.Label(
-            file_card,
-            text="① Pilih File PDF",
+        self.file_card = self._card(main)
+        self.file_card.pack(fill="x")
+        self.file_step_label = tk.Label(
+            self.file_card,
+            text="① Pilih atau Seret (Drag & Drop) File PDF",
             background=CARD,
             foreground=INK,
             font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-        file_row = tk.Frame(file_card, background=CARD)
-        file_row.pack(fill="x", pady=(12, 0))
+        )
+        self.file_step_label.pack(anchor="w")
+        self.file_row = tk.Frame(self.file_card, background=CARD)
+        self.file_row.pack(fill="x", pady=(12, 0))
         self.file_button = tk.Button(
-            file_row,
+            self.file_row,
             text="Pilih PDF",
             command=self.choose_file,
             cursor="hand2",
@@ -128,24 +146,26 @@ class PdfCompressorApp:
             font=("Segoe UI Semibold", 10),
         )
         self.file_button.pack(side="left")
-        labels = tk.Frame(file_row, background=CARD)
-        labels.pack(side="left", fill="x", expand=True, padx=(14, 0))
-        tk.Label(
-            labels,
+        self.labels_frame = tk.Frame(self.file_row, background=CARD)
+        self.labels_frame.pack(side="left", fill="x", expand=True, padx=(14, 0))
+        self.file_name_label = tk.Label(
+            self.labels_frame,
             textvariable=self.file_text,
             background=CARD,
             foreground=INK,
             anchor="w",
             font=("Segoe UI Semibold", 10),
-        ).pack(fill="x")
-        tk.Label(
-            labels,
+        )
+        self.file_name_label.pack(fill="x")
+        self.file_detail_label = tk.Label(
+            self.labels_frame,
             textvariable=self.file_detail,
             background=CARD,
             foreground=MUTED,
             anchor="w",
             font=("Segoe UI", 9),
-        ).pack(fill="x", pady=(2, 0))
+        )
+        self.file_detail_label.pack(fill="x", pady=(2, 0))
 
         level_card = self._card(main)
         level_card.pack(fill="x", pady=(14, 0))
@@ -266,6 +286,68 @@ class PdfCompressorApp:
         )
         self.result_label.pack(fill="x", pady=(5, 0))
 
+    def _setup_dnd(self) -> None:
+        if not HAS_DND or not hasattr(self.root, "drop_target_register"):
+            return
+        # Daftarkan seluruh jendela agar bisa menerima drag & drop dari mana saja di dalam aplikasi
+        self.root.drop_target_register(DND_FILES)
+        self.root.dnd_bind("<<DropEnter>>", self._on_drag_enter)
+        self.root.dnd_bind("<<DropLeave>>", self._on_drag_leave)
+        self.root.dnd_bind("<<Drop>>", self._on_drop)
+
+    def _set_drop_highlight(self, active: bool) -> None:
+        bg = DROP_HOVER if active else CARD
+        border = ACCENT if active else "#D9E2EC"
+        self.file_card.configure(background=bg, highlightbackground=border)
+        for widget in (
+            self.file_step_label,
+            self.file_row,
+            self.labels_frame,
+            self.file_name_label,
+            self.file_detail_label,
+        ):
+            widget.configure(background=bg)
+
+    def _on_drag_enter(self, _event: tk.Event) -> None:
+        if not self.is_busy:
+            self._set_drop_highlight(True)
+
+    def _on_drag_leave(self, _event: tk.Event) -> None:
+        self._set_drop_highlight(False)
+
+    def _on_drop(self, event: tk.Event) -> None:
+        self._set_drop_highlight(False)
+        if self.is_busy:
+            return
+        raw_data = getattr(event, "data", "")
+        if not raw_data:
+            return
+        try:
+            paths = self.root.tk.splitlist(raw_data)
+        except tk.TclError:
+            paths = [raw_data.strip("{}")]
+
+        if not paths:
+            return
+
+        dropped_path = Path(paths[0])
+        if dropped_path.suffix.lower() != ".pdf":
+            self._show_error(f"Format tidak didukung ({dropped_path.name}). Harap seret file .pdf.")
+            return
+        if not dropped_path.is_file():
+            self._show_error("File PDF yang diseret tidak dapat diakses.")
+            return
+
+        self._load_selected_file(dropped_path)
+
+    def _load_selected_file(self, path: Path) -> None:
+        self.selected_path = path
+        self.file_text.set(self.selected_path.name)
+        self.file_detail.set(f"Ukuran file asli: {format_bytes(self.selected_path.stat().st_size)}")
+        self._clear_result()
+        self.status_text.set("File siap, silakan pilih tingkat kompresi.")
+        self.status_label.configure(foreground=MUTED)
+
     def choose_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Pilih PDF yang akan dikompres",
@@ -273,16 +355,11 @@ class PdfCompressorApp:
         )
         if not selected:
             return
-        self.selected_path = Path(selected)
-        self.file_text.set(self.selected_path.name)
-        self.file_detail.set(f"Ukuran file asli: {format_bytes(self.selected_path.stat().st_size)}")
-        self._clear_result()
-        self.status_text.set("File siap, silakan pilih tingkat kompresi.")
-        self.status_label.configure(foreground=MUTED)
+        self._load_selected_file(Path(selected))
 
     def start_compression(self) -> None:
         if self.selected_path is None:
-            self._show_error("Silakan pilih file PDF terlebih dahulu.")
+            self._show_error("Silakan pilih atau seret file PDF terlebih dahulu.")
             return
         source = self.selected_path
         level = self.level.get()
@@ -308,6 +385,7 @@ class PdfCompressorApp:
             self.root.after(0, lambda: self._set_busy(False))
 
     def _set_busy(self, busy: bool) -> None:
+        self.is_busy = busy
         state = "disabled" if busy else "normal"
         self.file_button.configure(state=state)
         self.start_button.configure(state=state)
@@ -352,7 +430,7 @@ class PdfCompressorApp:
 
 
 def main() -> None:
-    root = tk.Tk()
+    root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
     PdfCompressorApp(root)
     root.mainloop()
 
