@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ctypes
+import gc
 import inspect
 import os
 import subprocess
+import sys
 import tkinter as tk
 from pathlib import Path
 from threading import Thread
@@ -48,6 +51,18 @@ LEVEL_OPTIONS = (
     (2, "Seimbang", "150 DPI", "JPEG 75"),
     (3, "Kecil", "110 DPI", "JPEG 65"),
 )
+
+
+def trim_working_set() -> None:
+    """Mengembalikan halaman RAM yang sudah tidak dipakai kembali ke sistem operasi Windows."""
+    gc.collect()
+    if sys.platform == "win32":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetCurrentProcess()
+            kernel32.SetProcessWorkingSetSize(handle, ctypes.c_size_t(-1), ctypes.c_size_t(-1))
+        except Exception:
+            pass
 
 
 def pick_font_family(root: tk.Tk) -> str:
@@ -113,7 +128,7 @@ def draw_rounded_rect(
     ]
     kwargs: dict[str, object] = {
         "smooth": True,
-        "splinesteps": 24,
+        "splinesteps": 12,
         "fill": fill,
         "outline": outline,
         "width": width,
@@ -154,6 +169,7 @@ class RoundedCard(tk.Canvas):
         self.padding = padding
         self.min_height = min_height
         self.shadow = shadow
+        self._last_size: tuple[int, int] = (0, 0)
 
         self.inner = tk.Frame(self, background=bg_card)
         self._win_id = self.create_window(
@@ -179,7 +195,7 @@ class RoundedCard(tk.Canvas):
             self.border_color = border_color
         if border_width is not None:
             self.border_width = border_width
-        self._redraw()
+        self._redraw(force=True)
 
     def _on_inner_configure(self, _event: tk.Event) -> None:
         req_h = self.inner.winfo_reqheight() + self.padding * 2 + (2 if self.shadow else 0)
@@ -197,11 +213,14 @@ class RoundedCard(tk.Canvas):
             self.configure(height=target_h)
         self._redraw()
 
-    def _redraw(self) -> None:
+    def _redraw(self, force: bool = False) -> None:
         w = self.winfo_width()
         h = self.winfo_height()
         if w <= 4 or h <= 4:
             return
+        if not force and self._last_size == (w, h):
+            return
+        self._last_size = (w, h)
         self.delete("card_bg")
         bottom_offset = 2 if self.shadow else 0
         if self.shadow:
@@ -282,8 +301,9 @@ class FluentButton(tk.Canvas):
         self.bind("<ButtonRelease-1>", self._on_click)
 
     def _measure_and_resize(self) -> None:
-        f = tkfont.Font(font=self.font_tuple)
-        text_w = f.measure(self.text)
+        # Estimasi lebar tanpa membuat objek tkfont baru berulang kali
+        avg_char_w = int(self.font_tuple[1] * 0.72)
+        text_w = len(self.text) * avg_char_w
         target_w = max(self.min_width, text_w + self.padx * 2)
         self.configure(width=target_w, height=self.btn_height)
 
@@ -543,9 +563,9 @@ class PdfCompressorApp:
         self._build_ui()
         self._setup_dnd()
         self._select_level(2)
+        self.root.after(500, trim_working_set)
 
     def _build_scrollable_shell(self) -> None:
-        """Membungkus konten dalam area gulir bersih agar tetap responsif saat window diperkecil."""
         self.scroll_canvas = tk.Canvas(
             self.root,
             background=BG_APP,
@@ -600,13 +620,10 @@ class PdfCompressorApp:
         container.bind("<Configure>", _update, add="+")
 
     def _build_ui(self) -> None:
-        # Padding halaman 32px
         container = tk.Frame(self.page, background=BG_APP)
         container.pack(fill="both", expand=True, padx=32, pady=32)
 
-        # =================================================================
         # HEADER
-        # =================================================================
         header = tk.Frame(container, background=BG_APP)
         header.pack(fill="x")
 
@@ -643,9 +660,7 @@ class PdfCompressorApp:
         subtitle_lbl.pack(fill="x", pady=(2, 0))
         self._bind_responsive_wrap(header_text, subtitle_lbl)
 
-        # =================================================================
-        # SECTION 1 - DRAG DROP AREA (Jarak antar section: 24px)
-        # =================================================================
+        # SECTION 1 - DRAG DROP AREA
         self.drop_card = RoundedCard(
             container,
             bg_outer=BG_APP,
@@ -671,7 +686,6 @@ class PdfCompressorApp:
         self.drop_zone.bind("<Configure>", lambda _e: self._redraw_drop_zone())
         self.drop_zone.bind("<ButtonRelease-1>", self._on_drop_zone_click)
 
-        # Opsi otomatis kompres saat drag & drop
         auto_row = tk.Frame(container, background=BG_APP)
         auto_row.pack(fill="x", pady=(10, 0))
         self.auto_check = tk.Checkbutton(
@@ -691,9 +705,7 @@ class PdfCompressorApp:
         self.auto_check.pack(fill="x")
         self._bind_responsive_wrap(auto_row, self.auto_check, horizontal_margin=24)
 
-        # =================================================================
-        # SECTION 2 - TINGKAT KOMPRESI (Choice Cards)
-        # =================================================================
+        # SECTION 2 - TINGKAT KOMPRESI
         sec2_frame = tk.Frame(container, background=BG_APP)
         sec2_frame.pack(fill="x", pady=(24, 0))
 
@@ -725,9 +737,7 @@ class PdfCompressorApp:
             card.grid(row=0, column=idx, sticky="ew", padx=(0, 12) if idx < 2 else 0)
             self.choice_cards[lvl] = card
 
-        # =================================================================
-        # SECTION 3 - INFORMASI (Info Card #EFF6FF)
-        # =================================================================
+        # SECTION 3 - INFORMASI
         info_card = RoundedCard(
             container,
             bg_outer=BG_APP,
@@ -768,9 +778,7 @@ class PdfCompressorApp:
         info_text.pack(side="left", fill="x", expand=True)
         self._bind_responsive_wrap(info_row, info_text, horizontal_margin=36)
 
-        # =================================================================
         # SECTION 4 - ACTION BUTTON
-        # =================================================================
         action_frame = tk.Frame(container, background=BG_APP)
         action_frame.pack(fill="x", pady=(24, 0))
 
@@ -807,9 +815,7 @@ class PdfCompressorApp:
         self.ghost_folder_btn.pack(side="left", padx=(12, 0))
         self.ghost_folder_btn.set_enabled(False)
 
-        # =================================================================
-        # PROGRESS SECTION (Tersembunyi saat idle)
-        # =================================================================
+        # PROGRESS SECTION
         self.progress_card = RoundedCard(
             container,
             bg_outer=BG_APP,
@@ -846,9 +852,7 @@ class PdfCompressorApp:
         self.progress_bar = SmoothProgressBar(self.progress_card.inner, bg_outer=BG_CARD, height=10)
         self.progress_bar.pack(fill="x")
 
-        # =================================================================
-        # SUCCESS STATE CARD (Tersembunyi sampai selesai)
-        # =================================================================
+        # SUCCESS STATE CARD
         self.success_card = RoundedCard(
             container,
             bg_outer=BG_APP,
@@ -916,9 +920,7 @@ class PdfCompressorApp:
         )
         self.open_folder_btn.pack(side="left", padx=(10, 0))
 
-        # =================================================================
-        # ERROR BANNER (Tersembunyi kecuali ada kesalahan)
-        # =================================================================
+        # ERROR BANNER
         self.error_card = RoundedCard(
             container,
             bg_outer=BG_APP,
@@ -976,9 +978,7 @@ class PdfCompressorApp:
         v_lbl.pack(anchor="w", pady=(2, 0))
         return t_lbl, v_lbl
 
-    # =====================================================================
     # DROP ZONE RENDERING & INTERACTION
-    # =====================================================================
     def _redraw_drop_zone(self) -> None:
         w = self.drop_zone.winfo_width()
         h = self.drop_zone.winfo_height()
@@ -1149,9 +1149,7 @@ class PdfCompressorApp:
         if self.auto_compress_drop.get():
             self.start_compression()
 
-    # =====================================================================
     # STATE & ACTIONS
-    # =====================================================================
     def _select_level(self, level: int) -> None:
         if self.is_busy:
             return
@@ -1220,7 +1218,7 @@ class PdfCompressorApp:
         pct_int = int(round(self.display_progress))
         self.prog_pct_lbl.configure(text=f"{pct_int}%")
         self.progress_bar.set_progress(self.display_progress)
-        self._anim_job = self.root.after(30, self._animate_progress)
+        self._anim_job = self.root.after(45, self._animate_progress)
 
     def _compress_worker(self, source: Path, level: int) -> None:
         try:
@@ -1244,6 +1242,8 @@ class PdfCompressorApp:
             )
         else:
             self.root.after(0, lambda: self._finish_with_success(result))
+        finally:
+            trim_working_set()
 
     def _set_busy(self, busy: bool) -> None:
         self.is_busy = busy
@@ -1286,10 +1286,12 @@ class PdfCompressorApp:
         self.metric_saved_val.configure(text=saved_val)
 
         self.success_card.pack(fill="x", pady=(24, 0))
+        trim_working_set()
 
     def _finish_with_error(self, message: str) -> None:
         self._set_busy(False)
         self._show_error(message)
+        trim_working_set()
 
     def _show_error(self, message: str) -> None:
         self.progress_card.pack_forget()
