@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -63,6 +64,15 @@ def make_output_path(input_path: Path, level: int) -> Path:
     return output
 
 
+def _release_fitz_memory() -> None:
+    """Membersihkan cache internal C-level MuPDF dan memicu garbage collection Python."""
+    try:
+        fitz.TOOLS.store_shrink(100)
+    except Exception:
+        pass
+    gc.collect()
+
+
 def compress_pdf(
     input_path: Path,
     level: int,
@@ -71,6 +81,12 @@ def compress_pdf(
     source = validate_source(input_path)
     profile = get_profile(level)
     output = make_output_path(source, level)
+
+    # Batasi cache internal MuPDF maksimal 16 MB agar tidak menumpuk di RAM
+    try:
+        fitz.TOOLS.set_store_max(16 * 1024 * 1024)
+    except Exception:
+        pass
 
     try:
         source_document = fitz.open(source)
@@ -85,18 +101,32 @@ def compress_pdf(
             total_pages = max(source_document.page_count, 1)
             if progress_callback is not None:
                 progress_callback(0, total_pages)
+
             with fitz.open() as result_document:
                 for index, source_page in enumerate(source_document, start=1):
+                    rect = source_page.rect
                     image = source_page.get_pixmap(dpi=profile.resolution_dpi, alpha=False)
                     jpeg = image.tobytes("jpeg", jpg_quality=profile.jpeg_quality)
+                    # Segera bebaskan buffer piksel mentah sebelum menyisipkan ke halaman baru
+                    del image
+
                     result_page = result_document.new_page(
-                        width=source_page.rect.width,
-                        height=source_page.rect.height,
+                        width=rect.width,
+                        height=rect.height,
                     )
                     result_page.insert_image(result_page.rect, stream=jpeg)
+                    del jpeg
+
+                    # Kosongkan cache render MuPDF setiap 5 halaman agar RAM tetap rendah
+                    if index % 5 == 0:
+                        _release_fitz_memory()
+
                     if progress_callback is not None:
                         progress_callback(index, total_pages)
-                result_document.save(output, garbage=4, deflate=True)
+
+                result_document.save(output, garbage=3, deflate=True)
+
+        _release_fitz_memory()
 
         with fitz.open(output) as validated_document:
             page_count = validated_document.page_count
@@ -114,3 +144,5 @@ def compress_pdf(
     except Exception as error:
         output.unlink(missing_ok=True)
         raise CompressionError("Gagal membuat file PDF baru, periksa ruang penyimpanan dan izin akses file.") from error
+    finally:
+        _release_fitz_memory()
