@@ -24,7 +24,7 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: |
-          pyinstaller --noconfirm --onefile --windowed --collect-all tkinterdnd2 --exclude-module unittest --exclude-module email --exclude-module http --exclude-module xml --exclude-module pydoc --paths src --name "Kompresor-PDF-Ringan" src/app.pyp.py
+          pyinstaller --noconfirm --onefile --windowed --collect-all tkinterdnd2 --paths src --name "Kompresor-PDF-Ringan" src/app.py
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
