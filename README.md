@@ -17,7 +17,7 @@ File asli tidak akan diubah. Hasil kompresi otomatis dibuat sebagai file baru di
 - ✅ Otomatis membuat nama file baru untuk menghindari overwrite
 ---
 ## 🖼️ Tampilan Aplikasi
-docs/images/app-main-window.png
+![Tampilan Aplikasi](docs/images/app-main-window.png)
 ---
 ## 🚀 Cara Menggunakan
 1. Jalankan `PDF Compressor.exe`
