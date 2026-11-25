@@ -17,6 +17,13 @@ class CompressionProfile:
 
 
 @dataclass(frozen=True)
+class PdfInfo:
+    path: Path
+    size_bytes: int
+    page_count: int
+
+
+@dataclass(frozen=True)
 class CompressionResult:
     input_path: Path
     output_path: Path
@@ -53,6 +60,37 @@ def validate_source(input_path: Path) -> Path:
     return source
 
 
+def inspect_pdf_info(input_path: Path) -> PdfInfo:
+    """Membaca ukuran file dan jumlah halaman PDF secara cepat tanpa memuat seluruh halaman ke RAM."""
+    source = validate_source(input_path)
+    try:
+        doc = fitz.open(source)
+    except (fitz.FileDataError, fitz.EmptyFileError) as error:
+        raise CompressionError("Tidak dapat membaca PDF, file mungkin rusak atau dilindungi kata sandi.") from error
+    if doc.needs_pass:
+        doc.close()
+        raise CompressionError("PDF ini dilindungi kata sandi, kompresi belum didukung.")
+    with doc:
+        pages = doc.page_count
+    return PdfInfo(path=source, size_bytes=source.stat().st_size, page_count=pages)
+
+
+def estimate_compressed_size(size_bytes: int, page_count: int, level: int) -> int:
+    """Menghitung perkiraan ukuran hasil kompresi berdasarkan DPI & kualitas JPEG target."""
+    if size_bytes <= 0:
+        return 0
+    # Rata-rata rasio kompresi raster per level
+    ratio_map = {
+        1: 0.52,  # 200 DPI, JPEG 85
+        2: 0.32,  # 150 DPI, JPEG 75
+        3: 0.19,  # 110 DPI, JPEG 65
+    }
+    ratio = ratio_map.get(level, 0.32)
+    estimated = int(size_bytes * ratio)
+    min_floor = max(page_count * 18 * 1024, int(size_bytes * 0.08))
+    return min(size_bytes, max(estimated, min_floor))
+
+
 def make_output_path(input_path: Path, level: int) -> Path:
     source = Path(input_path)
     base_name = f"{source.stem}_kompres_L{level}"
@@ -65,7 +103,6 @@ def make_output_path(input_path: Path, level: int) -> Path:
 
 
 def _release_fitz_memory() -> None:
-    """Membersihkan cache internal C-level MuPDF dan memicu garbage collection Python."""
     try:
         fitz.TOOLS.store_shrink(100)
     except Exception:
@@ -82,7 +119,6 @@ def compress_pdf(
     profile = get_profile(level)
     output = make_output_path(source, level)
 
-    # Batasi cache internal MuPDF maksimal 16 MB agar tidak menumpuk di RAM
     try:
         fitz.TOOLS.set_store_max(16 * 1024 * 1024)
     except Exception:
@@ -107,7 +143,6 @@ def compress_pdf(
                     rect = source_page.rect
                     image = source_page.get_pixmap(dpi=profile.resolution_dpi, alpha=False)
                     jpeg = image.tobytes("jpeg", jpg_quality=profile.jpeg_quality)
-                    # Segera bebaskan buffer piksel mentah sebelum menyisipkan ke halaman baru
                     del image
 
                     result_page = result_document.new_page(
@@ -117,7 +152,6 @@ def compress_pdf(
                     result_page.insert_image(result_page.rect, stream=jpeg)
                     del jpeg
 
-                    # Kosongkan cache render MuPDF setiap 5 halaman agar RAM tetap rendah
                     if index % 5 == 0:
                         _release_fitz_memory()
 
